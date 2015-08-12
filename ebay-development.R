@@ -1,10 +1,11 @@
 # KAGGLE COMPETITION (EDX): Predict whether an iPad is going to sell on ebay
 
-'This file contains models and thoughts I developed while in the competition'
+'This file contains the predictive models and some experimentation while I was building the models during
+# the competition'
 
 rm(list= ls())
-ebaytrain = read.csv('./ebay/ebayiPadTrain.csv', stringsAsFactors = FALSE) # training set
-ebaytest = read.csv('./ebay/eBayiPadTest.csv', stringsAsFactors = FALSE) # test set, does not contain ouctome variable
+ebaytrain = read.csv('./EDXKaggle/ebayiPadTrain.csv', stringsAsFactors = FALSE) # training set provided in Kaggle
+ebaytest = read.csv('./EDXKaggle/eBayiPadTest.csv', stringsAsFactors = FALSE) # test set, does not contain outcome variable
 
 ebaytrain$TotalWords = nchar(ebaytrain$description) # To evaluate whether the extent of the description is a predictor
 ebaytest$TotalWords = nchar(ebaytest$description)
@@ -26,7 +27,7 @@ ebaytrain$productline = factor(ebaytrain$productline) # to remove the extra fact
 
 library(tm)
 library(SnowballC)
-# analyse text of training and testing sets together
+# analyse text of training and testing sets together, contained in the description variable
 CorpusDescription = Corpus(VectorSource(c(ebaytrain$description, ebaytest$description)))
 CorpusDescription = tm_map(CorpusDescription, content_transformer(tolower), lazy=TRUE)
 CorpusDescription = tm_map(CorpusDescription, PlainTextDocument, lazy=TRUE)
@@ -43,7 +44,7 @@ colnames(DescriptionWords) = make.names(colnames(DescriptionWords))
 DescriptionWordsTrain = head(DescriptionWords, nrow(ebaytrain))
 DescriptionWordsTest = tail(DescriptionWords, nrow(ebaytest))
 
-ebaytrain$WordCount = rowSums(DescriptionWordsTrain)
+ebaytrain$WordCount = rowSums(DescriptionWordsTrain) # to determine whether the number of stemed words are a good predictor 
 ebaytest$WordCount = rowSums(DescriptionWordsTest)
 
 newtrain = cbind(ebaytrain, DescriptionWordsTrain)
@@ -61,16 +62,21 @@ spl = sample.split(ebaytrain$sold, SplitRatio = 0.7)
 train = subset(ebaytrain, spl == T)
 test = subset(ebaytrain, spl == F)
 train$description = NULL # remove description column
-test$descritpion = NULL
+test$description = NULL
 train$UniqueID = NULL # remove ID column
 test$UniqueID = NULL
 
+modelsFit = NULL
 #First model: logistic regression using all the variables
 logReg = glm(sold ~., data = train, family = binomial)
 testPred = predict(logReg, newdata = test, type = 'response')
 library(ROCR)
 ROCRpred = prediction(testPred, test$sold)
 auc = as.numeric(performance(ROCRpred, "auc")@y.values)  #0.860241 & AIC: 1236.6
+predictionsTable = table(test$sold, testPred > 0.5)
+accuracy = (predictionsTable[1,1]+predictionsTable[2,2])/sum(predictionsTable) 
+modelsFit = c('logReg1', round(accuracy, 4), round(auc, 4))
+names(modelsFit) = c('Model #', 'Accuracy', 'auc')
 
 #removing some non-significant variables
 logReg = glm(sold ~. -color-carrier-TotalWords, data = train, family = binomial)
@@ -78,23 +84,33 @@ testPred = predict(logReg, newdata = test, type = 'response')
 library(ROCR)
 ROCRpred = prediction(testPred, test$sold)
 auc = as.numeric(performance(ROCRpred, "auc")@y.values)   #0.8604362
+predictionsTable = table(test$sold, testPred > 0.5)
+accuracy = (predictionsTable[1,1]+predictionsTable[2,2])/sum(predictionsTable) 
+modelsFit = rbind(modelsFit, c('logReg2', round(accuracy, 4), round(auc, 4)))
+rownames(modelsFit) = NULL
 
 logReg = glm(sold ~. -color-carrier-TotalWords-goodcon-nodescription-lowstartprice, data = train, family = binomial)
 testPred = predict(logReg, newdata = test, type = 'response')
 library(ROCR)
 ROCRpred = prediction(testPred, test$sold)
 auc = as.numeric(performance(ROCRpred, "auc")@y.values)   #0.8644184 & AIC: 1220.5: THIS LOOKS LIKE THE BEST, best auc and smallest AIC
+predictionsTable = table(test$sold, testPred > 0.5)
+accuracy = (predictionsTable[1,1]+predictionsTable[2,2])/sum(predictionsTable) 
+modelsFit = rbind(modelsFit, c('logReg3', round(accuracy, 4), round(auc, 4)))
 
 logReg = glm(sold ~. -color-carrier-goodcon-nodescription-lowstartprice-WordCount, data = train, family = binomial)
 testPred = predict(logReg, newdata = test, type = 'response')
 library(ROCR)
 ROCRpred = prediction(testPred, test$sold)
 auc = as.numeric(performance(ROCRpred, "auc")@y.values) #0.8629088 & AIC: 1222.2
+predictionsTable = table(test$sold, testPred > 0.5)
+accuracy = (predictionsTable[1,1]+predictionsTable[2,2])/sum(predictionsTable) 
+modelsFit = rbind(modelsFit, c('logReg4', round(accuracy, 4), round(auc, 4)))
 
 #All Logistic regression models show  roughly the same auc
-# I used the one before last for submission to the kaggle competition.
+# I select the one before last for making the predictions for the  competition (logReg3)
 
-#To submit:
+#To submit: I re-build the model using the whole training set, and make predictions for the test set Kaggle provided
 ebaytrain1 = ebaytrain   # So I can re-use the datasets later on the code
 ebaytest1 = ebaytest
 ebaytrain$description = NULL
@@ -107,7 +123,7 @@ logReg = glm(sold ~.-color-carrier-TotalWords-goodcon-nodescription-lowstartpric
 testPred = predict(logReg, newdata = ebaytest, type = 'response')
 
 submission = data.frame(UniqueID = UniqueID, Probability1 = testPred)
-write.csv(submission, './ebay/submission.csv', row.names=FALSE)
+write.csv(submission, './EDXKaggle/submission.csv', row.names=FALSE)
 
 ######################################################################
 # Second models: random forest using non-text variables + TotalWord count
@@ -119,50 +135,60 @@ ebayRF =  randomForest(sold ~., data = train)
 testPred = predict(ebayRF, newdata = test, type = 'prob')[,2]
 ROCRpred = prediction(testPred, test$sold)
 auc = as.numeric(performance(ROCRpred, "auc")@y.values) #0.8725974
+predictionsTable = table(test$sold, testPred > 0.5)
+accuracy = (predictionsTable[1,1]+predictionsTable[2,2])/sum(predictionsTable)
+modelsFit = rbind(modelsFit, c('RandomForest1', round(accuracy, 4), round(auc, 4)))
 
 ebayRF$importance # we see that goodcon and nodescription do not contribute much to decrease the impurity
 
-train2=train
-train2$goodcon = NULL
-train2$nodescription = NULL
-test2 = test
-test2$goodcon = NULL
-test2$nodescription = NULL
+train$goodcon = NULL
+train$nodescription = NULL
+test = test
+test$goodcon = NULL
+test$nodescription = NULL
 set.seed(144)
-ebayRF =  randomForest(sold ~., data = train2)
-testPred = predict(ebayRF, newdata = test2, type = 'prob')[,2]
-ROCRpred = prediction(testPred, test2$sold)
+ebayRF =  randomForest(sold ~., data = train)
+testPred = predict(ebayRF, newdata = test, type = 'prob')[,2]
+ROCRpred = prediction(testPred, test$sold)
 auc = as.numeric(performance(ROCRpred, "auc")@y.values) #0.8763908 
+predictionsTable = table(test$sold, testPred > 0.5)
+accuracy = (predictionsTable[1,1]+predictionsTable[2,2])/sum(predictionsTable) 
+modelsFit = rbind(modelsFit, c('RandomForest2', round(accuracy, 4), round(auc, 4)))
 
-train2$lowstartprice = NULL
-train2$carrier = NULL
-train2$color = NULL
-test2$lowstartprice = NULL
-test2$carrier = NULL
-test2$color = NULL
+train$lowstartprice = NULL
+train$carrier = NULL
+train$color = NULL
+test$lowstartprice = NULL
+test$carrier = NULL
+test$color = NULL
 set.seed(2000)
-ebayRF =  randomForest(sold ~., data = train2)
-testPred = predict(ebayRF, newdata = test2, type = 'prob')[,2]
-ROCRpred = prediction(testPred, test2$sold)
+ebayRF =  randomForest(sold ~., data = train)
+testPred = predict(ebayRF, newdata = test, type = 'prob')[,2]
+ROCRpred = prediction(testPred, test$sold)
 auc = as.numeric(performance(ROCRpred, "auc")@y.values) #0.8685306
+predictionsTable = table(test$sold, testPred > 0.5)
+accuracy = (predictionsTable[1,1]+predictionsTable[2,2])/sum(predictionsTable) 
+modelsFit = rbind(modelsFit, c('RandomForest3', round(accuracy, 4), round(auc, 4)))
 
-train2$WordCount = NULL
-test2$WordCount = NULL
+train$WordCount = NULL
+test$WordCount = NULL
 set.seed(2000)
-ebayRF =  randomForest(sold ~., data = train2)
-testPred = predict(ebayRF, newdata = test2, type = 'prob')[,2]
-ROCRpred = prediction(testPred, test2$sold)
+ebayRF =  randomForest(sold ~., data = train)
+testPred = predict(ebayRF, newdata = test, type = 'prob')[,2]
+ROCRpred = prediction(testPred, test$sold)
 auc = as.numeric(performance(ROCRpred, "auc")@y.values) # 0.8760395
+predictionsTable = table(test$sold, testPred > 0.5)
+accuracy = (predictionsTable[1,1]+predictionsTable[2,2])/sum(predictionsTable) 
+modelsFit = rbind(modelsFit, c('RandomForest4', round(accuracy, 4), round(auc, 4)))
 
-# All the random forest trees have aproximately the same auc. I choose the last one for submission:
+# All the random forest trees have aproximately the same auc. I choose the last one for submission (RandomForest4):
 # It includes the variables 'biddable', 'startprice', 'condition', 'cellular', 'storage', 'productline' and 'TotalWords'
-# THIS WAS THE ONE I USED IN THE KAGGLE COMPETITION
 
 #To submit:
 ebaytrain = ebaytrain1
 ebaytest = ebaytest1
 ebaytrain = cbind(ebaytrain[,2:5], ebaytrain[,8:10], ebaytrain[,12])
-names(ebaytrain) = names(train2)
+names(ebaytrain) = names(train)
 ebaytest = cbind(ebaytest[,2:5], ebaytest[,8:9], ebaytest[,11])
 names(ebaytest)[7] = 'TotalWords'
 ebaytrain$sold = as.factor(ebaytrain$sold)
@@ -171,7 +197,7 @@ ebayRF =  randomForest(sold ~., data = ebaytrain)
 testPred = predict(ebayRF, newdata = ebaytest, type = 'prob')[,2]
 
 submission = data.frame(UniqueID = UniqueID, Probability1 = testPred)
-write.csv(submission, './ebay/submission2.csv', row.names=FALSE)
+write.csv(submission, './EDXKaggle/submission2.csv', row.names=FALSE)
 
 # From the random forest and logistic regressions it seems that the variables I chose to evaluate (lowprice, 
 # good condition, lowstartprice, and nodescription) are not really contributing as predictors of sale.
@@ -194,7 +220,10 @@ set.seed(2000)
 ebayRF = randomForest(sold ~., data = train)
 testPred = predict(ebayRF, newdata = test, type = 'prob')[,2]
 ROCRpred = prediction(testPred, test$sold)
-auc = as.numeric(performance(ROCRpred, "auc")@y.values) #0.8606574 
+auc = as.numeric(performance(ROCRpred, "auc")@y.values) #0.8606574
+predictionsTable = table(test$sold, testPred > 0.5)
+accuracy = (predictionsTable[1,1]+predictionsTable[2,2])/sum(predictionsTable) 
+modelsFit = rbind(modelsFit, c('RF including Text', round(accuracy, 4), round(auc, 4)))
 
 ebayRF$importance # we see that the different words contribute very little to decreasing the impurity
 # therefore, the bag of words does not improve the accuracy of our model over the ones evaluated above
@@ -288,7 +317,9 @@ allPredictions = c(testPredbid, testPredBIN)
 allOutcomes = c(as.numeric(as.character(testbid$sold)), as.numeric(as.character(testBIN$sold)))
 ROCRpred = prediction(allPredictions, allOutcomes)
 auc = as.numeric(performance(ROCRpred, "auc")@y.values) # 0.8564029 
-
+predictionsTable = table(allOutcomes, allPredictions >0.5)
+accuracy = (predictionsTable[1,1]+predictionsTable[2,2])/sum(predictionsTable) 
+modelsFit = rbind(modelsFit, c('Bid vs BuyItNow', round(accuracy, 4), round(auc, 4)))
 # From these analyses we see that separating into biddable and non biddable does not really improve the predictive power
 
 #####################################################################################
@@ -296,7 +327,7 @@ auc = as.numeric(performance(ROCRpred, "auc")@y.values) # 0.8564029
 ebaytrain = ebaytrain1
 ebaytest = ebaytest1
 
-ebaytrain = ebaytrain[,-c(1,11,13,14,15,16)]
+ebaytrain = ebaytrain[,-c(1,11,13,14,15,16)] #remove all the variables that do not cotribute significantly
 
 for (i in 3:8) {ebaytrain[,i] = as.numeric(ebaytrain[,i])}
 
@@ -312,9 +343,19 @@ testNorm = predict(preproc, test)
 trainNorm$sold = NULL
 set.seed(88)
 kmeansClust = kmeans(trainNorm, centers=2)
-tapply(train$biddable, kmeansClust$cluster, mean) # to check in a few variables how the clusters differ
-tapply(train$startprice, kmeansClust$cluster, mean)
+# to check in a few variables how the clusters differ
+tapply(train$biddable, kmeansClust$cluster, mean) # no substantial difference in biddable
+tapply(train$startprice, kmeansClust$cluster, mean) # no substantial difference in startprice
 tapply(train$carrier, kmeansClust$cluster, mean) # we see that the custers differ on the carrier
+tapply(train$condition, kmeansClust$cluster, mean) # no substantial difference in condition
+tapply(train$color, kmeansClust$cluster, mean) # no substantial difference in color
+tapply(train$storage, kmeansClust$cluster, mean) # no substantial difference in storage
+tapply(train$productline, kmeansClust$cluster, mean) # mild difference
+tapply(train$TotalWords, kmeansClust$cluster, mean) # no substantial difference in biddable
+
+train2 = subset(ebaytrain1, spl = T)
+carriersInCluster = table(train2$carrier, kmeansClust$cluster) # we see that cluster 1 is enriched in AT&T or no carrier whereas custer 2 in Verizone and Unknown
+productlineCluster = table(train2$productline, kmeansClust$cluster) # First cluster contains mostly iPads, second cluster contains unknown and iPads mini
 
 library(flexclust)
 km.kcca = as.kcca(kmeansClust, trainNorm)
@@ -342,6 +383,9 @@ allPredictions = c(testPred1, testPred2)
 allOutcomes = c(test1$sold, test2$sold)
 ROCRpred = prediction(allPredictions, allOutcomes)
 auc = as.numeric(performance(ROCRpred, "auc")@y.values) # 0.8773508 a modest increase over our previous logistic regression without clustering
+predictionsTable = table(allOutcomes, allPredictions >0.5)
+accuracy = (predictionsTable[1,1]+predictionsTable[2,2])/sum(predictionsTable) 
+modelsFit = rbind(modelsFit, c('Clusters + logReg', round(accuracy, 4), round(auc, 4)))
 
 #predictions for each cluster in train set: Random Forest
 train1$sold = as.factor(train1$sold)
@@ -360,10 +404,12 @@ allPredictions = c(as.numeric(as.character(testPred1)), as.numeric(as.character(
 allOutcomes = c(as.numeric(as.character(test1$sold)), as.numeric(as.character(test2$sold)))
 ROCRpred = prediction(allPredictions, allOutcomes)
 auc = as.numeric(performance(ROCRpred, "auc")@y.values) # 0.9726777 A SUBSTANTIAL INCREASE FROM THE NON CLUSTERED RANDOM FOREST MODEL
+predictionsTable = table(allOutcomes, allPredictions >0.5)
+accuracy = (predictionsTable[1,1]+predictionsTable[2,2])/sum(predictionsTable) 
+modelsFit = rbind(modelsFit, c('Clusters + RF', round(accuracy, 4), round(auc, 4)))
 
 # Conclusion: clustering + Random Forest increases substantially the predictive power of the algorithm
 # This is the best model to predict whether an iPad will sell on ebay given our datasets
-# I did not submit this one to the kaggle competition because I joined a few days before the deadline.
 
 #GENERATE THE SUBMISSION
 UniqueID = ebaytest$UniqueID
@@ -410,7 +456,7 @@ allIDs = c(UniqueID1, UniqueID2)
 
 submission3 = data.frame(UniqueID = allIDs, Probability1 = allPredictions)
 submission3 = submission3[order(submission3$UniqueID),]
-write.csv(submission3, './ebay/submission3.csv', row.names=FALSE)
+write.csv(submission3, './EDXKaggle/submission3.csv', row.names=FALSE)
 
 ###############################################################################
 # Sixth model: clustering + predict (with bag of words)
@@ -464,5 +510,35 @@ allPredictions = c(as.numeric(as.character(testPred1)), as.numeric(as.character(
 allOutcomes = c(as.numeric(as.character(test1$sold)), as.numeric(as.character(test2$sold)))
 ROCRpred = prediction(allPredictions, allOutcomes)
 auc = as.numeric(performance(ROCRpred, "auc")@y.values) # 0.8849478  slight improvement
-
+predictionsTable = table(allOutcomes, allPredictions >0.5)
+accuracy = (predictionsTable[1,1]+predictionsTable[2,2])/sum(predictionsTable) 
+modelsFit = rbind(modelsFit, c('Clusters + RF, including text variable', round(accuracy, 4), round(auc, 4)))
 #Conclusion: the bag of words does not really contribute to the predictive power of our algorithm
+
+modelsFit = as.data.frame(modelsFit, stringsAsFactors = FALSE)
+names(modelsFit)[1] = 'Model'
+for (i in 2:3) {modelsFit[,i] = as.numeric(modelsFit[,i])}
+l = modelsFit$Model
+modelsFit$Model = factor(modelsFit$Model, levels = l)
+
+#Visualisation
+library(ggplot2)
+g = ggplot(modelsFit, aes(x=Model, y=Accuracy)) + geom_bar(stat = 'identity', fill = 'dark blue') 
+g = g + theme(axis.title.x = element_blank(), axis.text.x = element_text(angle = 45, hjust = 1, size = 15, color = 'black'))
+g = g + theme(axis.title.y = element_text(size = 20, vjust = 2), axis.text.y = element_text(size = 15, color = 'black'))
+g = g + ggtitle("Accuracy of the Different Predictive Models") +  theme(plot.title=element_text(face="bold", size=20))    
+g = g + coord_cartesian(ylim = c(0.70, 1)) 
+
+g2 = ggplot(modelsFit, aes(x=Model, y=auc)) + geom_bar(stat = 'identity', fill = 'red') 
+g2 = g2 + theme(axis.title.x = element_blank(), axis.text.x = element_text(angle = 45, hjust = 1, size = 15, color = 'black'))
+g2 = g2 + theme(axis.title.y = element_text(size = 20, vjust = 2), axis.text.y = element_text(size = 15, color = 'black'))
+g2 = g2 + ggtitle("auc for the Different Predictive Models") +  theme(plot.title=element_text(face="bold", size=20))    
+g2 = g2 + coord_cartesian(ylim = c(0.70, 1))
+
+pdf("./EDXKaggle/Accuracy.pdf")
+print(g)
+dev.off()
+
+pdf("./EDXKaggle/auc.pdf")
+print(g2)
+dev.off()
