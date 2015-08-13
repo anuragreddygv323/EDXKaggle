@@ -331,8 +331,8 @@ ebaytrain = ebaytrain[,-c(1,11,13,14,15,16)] #remove all the variables that do n
 
 for (i in 3:8) {ebaytrain[,i] = as.numeric(ebaytrain[,i])}
 
-train = subset(ebaytrain, spl = T)
-test = subset(ebaytrain, spl = F)
+train = subset(ebaytrain, spl == T)
+test = subset(ebaytrain, spl == F)
 
 #Normalize the data
 library(caret)
@@ -353,8 +353,8 @@ tapply(train$storage, kmeansClust$cluster, mean) # no substantial difference in 
 tapply(train$productline, kmeansClust$cluster, mean) # mild difference
 tapply(train$TotalWords, kmeansClust$cluster, mean) # no substantial difference in biddable
 
-train2 = subset(ebaytrain1, spl = T)
-carriersInCluster = table(train2$carrier, kmeansClust$cluster) # we see that cluster 1 is enriched in AT&T or no carrier whereas custer 2 in Verizone and Unknown
+train2 = subset(ebaytrain1, spl == T)
+carriersInCluster = table(train2$carrier, kmeansClust$cluster) # see that cluster 1 is enriched in AT&T or no carrier whereas custer 2 in Verizone and Unknown
 productlineCluster = table(train2$productline, kmeansClust$cluster) # First cluster contains mostly iPads, second cluster contains unknown and iPads mini
 
 library(flexclust)
@@ -363,8 +363,16 @@ clusterTrain = predict(km.kcca)
 testNorm$sold = NULL
 clusterTest = predict(km.kcca, newdata=testNorm)
 
-for (i in 3:8) {train[,i] = as.factor(train[,i])}
-for (i in 3:8) {test[,i] = as.factor(test[,i])}
+#for (i in 3:8) {train[,i] = as.factor(train[,i])}
+#for (i in 3:8) {test[,i] = as.factor(test[,i])}
+
+#####################
+#Now that I finished clustering, I go back to the original databases, with factors as strings
+ebaytrain = ebaytrain1
+ebaytest = ebaytest1
+ebaytrain = ebaytrain[,-c(1,11,13,14,15,16)] 
+train = subset(ebaytrain, spl == T)
+test = subset(ebaytrain, spl == F)
 
 train1 = subset(train, clusterTrain == 1)
 train2 = subset(train, clusterTrain == 2)
@@ -382,7 +390,7 @@ testPred2 = predict(logReg2, newdata = test2, type="response")
 allPredictions = c(testPred1, testPred2)
 allOutcomes = c(test1$sold, test2$sold)
 ROCRpred = prediction(allPredictions, allOutcomes)
-auc = as.numeric(performance(ROCRpred, "auc")@y.values) # 0.8773508 a modest increase over our previous logistic regression without clustering
+auc = as.numeric(performance(ROCRpred, "auc")@y.values) # 0.8758 a modest increase over our previous logistic regression without clustering
 predictionsTable = table(allOutcomes, allPredictions >0.5)
 accuracy = (predictionsTable[1,1]+predictionsTable[2,2])/sum(predictionsTable) 
 modelsFit = rbind(modelsFit, c('Clusters + logReg', round(accuracy, 4), round(auc, 4)))
@@ -396,25 +404,31 @@ test2$sold = as.factor(test2$sold)
 RF1 = randomForest(sold ~ ., data=train1)
 RF2 = randomForest(sold ~ ., data=train2)
 
-testPred1 = predict(RF1, newdata = test1, type="response")
-testPred2 = predict(RF2, newdata = test2, type="response")
+testPred1 = predict(RF1, newdata = test1, type="prob")[,2]
+testPred2 = predict(RF2, newdata = test2, type="prob")[,2]
 
 # Pooling the predictions
-allPredictions = c(as.numeric(as.character(testPred1)), as.numeric(as.character(testPred2)))
-allOutcomes = c(as.numeric(as.character(test1$sold)), as.numeric(as.character(test2$sold)))
+allPredictions = c(testPred1, testPred2)
+allOutcomes = c(test1$sold, test2$sold)
 ROCRpred = prediction(allPredictions, allOutcomes)
 auc = as.numeric(performance(ROCRpred, "auc")@y.values) # 0.9726777 A SUBSTANTIAL INCREASE FROM THE NON CLUSTERED RANDOM FOREST MODEL
 predictionsTable = table(allOutcomes, allPredictions >0.5)
 accuracy = (predictionsTable[1,1]+predictionsTable[2,2])/sum(predictionsTable) 
 modelsFit = rbind(modelsFit, c('Clusters + RF', round(accuracy, 4), round(auc, 4)))
 
-# Conclusion: clustering + Random Forest increases substantially the predictive power of the algorithm
-# This is the best model to predict whether an iPad will sell on ebay given our datasets
+ROCRperf = performance(ROCRpred, "tpr", "fpr")
+plot(ROCRperf, colorize=TRUE, print.cutoffs.at=seq(0,1,by=0.1), text.adj=c(-0.2,1.7))
+
+# Conclusion: clustering + Random Forest increases a bit the predictive power of the algorithm
 
 #GENERATE THE SUBMISSION
+ebaytrain = ebaytrain1
+ebaytest = ebaytest1
 UniqueID = ebaytest$UniqueID
+ebaytrain = ebaytrain[,-c(1,11,13,14,15,16)] #remove all the variables that do not cotribute significantly
 ebaytest = ebaytest[,-c(1,10,12,13,14,15)]
 
+for (i in 3:8) {ebaytrain[,i] = as.numeric(ebaytrain[,i])}
 for (i in 3:8) {ebaytest[,i] = as.numeric(ebaytest[,i])}
 
 #Normalize the data
@@ -424,14 +438,17 @@ testNorm = predict(preproc, ebaytest)
 #Make clusters
 trainNorm$sold = NULL
 set.seed(88)
-kmeansClust = kmeans(trainNorm, centers=2)
+kmeansClust = kmeans(trainNorm, centers=2) # HERE IS THE ERROR
 
 km.kcca = as.kcca(kmeansClust, trainNorm)
 clusterTrain = predict(km.kcca) 
 clusterTest = predict(km.kcca, newdata=testNorm)
 
-for (i in 3:8) {ebaytrain[,i] = as.factor(ebaytrain[,i])}
-for (i in 3:8) {ebaytest[,i] = as.factor(ebaytest[,i])}
+ebaytrain = ebaytrain1
+ebaytest = ebaytest1
+ebaytrain = ebaytrain[,-c(1,11,13,14,15,16)] #remove all the variables that do not cotribute significantly
+ebaytest = ebaytest[,-c(1,10,12,13,14,15)]
+ebaytrain$sold = as.factor(ebaytrain$sold)
 
 train1 = subset(ebaytrain, clusterTrain == 1)
 train2 = subset(ebaytrain, clusterTrain == 2)
@@ -441,17 +458,15 @@ UniqueID1 = UniqueID[clusterTest == 1]
 UniqueID2 = UniqueID[clusterTest == 2]
 
 #predictions for each cluster in train set: Random Forest
-train1$sold = as.factor(train1$sold)
-train2$sold = as.factor(train2$sold)
 
 RF1 = randomForest(sold ~ ., data=train1)
 RF2 = randomForest(sold ~ ., data=train2)
 
-testPred1 = predict(RF1, newdata = test1, type="response")
-testPred2 = predict(RF2, newdata = test2, type="response")
+testPred1 = predict(RF1, newdata = test1, type="prob")[,2]
+testPred2 = predict(RF2, newdata = test2, type="prob")[,2]
 
 # Pooling the predictions
-allPredictions = c(as.numeric(as.character(testPred1)), as.numeric(as.character(testPred2)))
+allPredictions = c(testPred1, testPred2)
 allIDs = c(UniqueID1, UniqueID2)
 
 submission3 = data.frame(UniqueID = allIDs, Probability1 = allPredictions)
@@ -466,8 +481,8 @@ newtest = newtest[,-c(1,10,12,13,14,15)]
 
 for (i in 3:8) {newtrain[,i] = as.numeric(newtrain[,i])}
 
-train = subset(newtrain, spl = T)
-test = subset(newtrain, spl = F)
+train = subset(newtrain, spl == T)
+test = subset(newtrain, spl == F)
 
 #Normalize the data
 preproc = preProcess(train)
@@ -484,37 +499,38 @@ clusterTrain = predict(km.kcca)
 testNorm$sold = NULL
 clusterTest = predict(km.kcca, newdata=testNorm)
 
-for (i in 3:8) {train[,i] = as.factor(train[,i])}
-for (i in 3:8) {test[,i] = as.factor(test[,i])}
+#predictions for each cluster in train set: Random Forest
+newtrain = newtrain[,-c(1,11,13,14,15,16)]
+newtest = newtest[,-c(1,10,12,13,14,15)]
+train = subset(newtrain, spl == T)
+test = subset(newtrain, spl == F)
+train$sold = as.factor(train$sold)
+test$sold = as.factor(test$sold)
 
 train1 = subset(train, clusterTrain == 1)
 train2 = subset(train, clusterTrain == 2)
 test1 = subset(test, clusterTest == 1)
 test2 = subset(test, clusterTest == 2)
 
-#predictions for each cluster in train set: Random Forest
-train1$sold = as.factor(train1$sold)
-train2$sold = as.factor(train2$sold)
-test1$sold = as.factor(test1$sold)
-test2$sold = as.factor(test2$sold)
-
 set.seed(99)
 RF1 = randomForest(sold ~ ., data=train1)
 RF2 = randomForest(sold ~ ., data=train2)
 
-testPred1 = predict(RF1, newdata = test1, type="response")
-testPred2 = predict(RF2, newdata = test2, type="response")
+testPred1 = predict(RF1, newdata = test1, type="prob")[,2]
+testPred2 = predict(RF2, newdata = test2, type="prob")[,2]
 
 # Pooling the predictions
-allPredictions = c(as.numeric(as.character(testPred1)), as.numeric(as.character(testPred2)))
-allOutcomes = c(as.numeric(as.character(test1$sold)), as.numeric(as.character(test2$sold)))
+allPredictions = c(testPred1, testPred2)
+allOutcomes = c(test1$sold, test2$sold)
 ROCRpred = prediction(allPredictions, allOutcomes)
 auc = as.numeric(performance(ROCRpred, "auc")@y.values) # 0.8849478  slight improvement
 predictionsTable = table(allOutcomes, allPredictions >0.5)
 accuracy = (predictionsTable[1,1]+predictionsTable[2,2])/sum(predictionsTable) 
 modelsFit = rbind(modelsFit, c('Clusters + RF, including text variable', round(accuracy, 4), round(auc, 4)))
+
 #Conclusion: the bag of words does not really contribute to the predictive power of our algorithm
 
+######################################################################################################
 modelsFit = as.data.frame(modelsFit, stringsAsFactors = FALSE)
 names(modelsFit)[1] = 'Model'
 for (i in 2:3) {modelsFit[,i] = as.numeric(modelsFit[,i])}
@@ -527,13 +543,38 @@ g = ggplot(modelsFit, aes(x=Model, y=Accuracy)) + geom_bar(stat = 'identity', fi
 g = g + theme(axis.title.x = element_blank(), axis.text.x = element_text(angle = 45, hjust = 1, size = 15, color = 'black'))
 g = g + theme(axis.title.y = element_text(size = 20, vjust = 2), axis.text.y = element_text(size = 15, color = 'black'))
 g = g + ggtitle("Accuracy of the Different Predictive Models") +  theme(plot.title=element_text(face="bold", size=20))    
-g = g + coord_cartesian(ylim = c(0.70, 1)) 
+g = g + coord_cartesian(ylim = c(0.70, 0.9)) 
 
 g2 = ggplot(modelsFit, aes(x=Model, y=auc)) + geom_bar(stat = 'identity', fill = 'red') 
 g2 = g2 + theme(axis.title.x = element_blank(), axis.text.x = element_text(angle = 45, hjust = 1, size = 15, color = 'black'))
 g2 = g2 + theme(axis.title.y = element_text(size = 20, vjust = 2), axis.text.y = element_text(size = 15, color = 'black'))
 g2 = g2 + ggtitle("auc for the Different Predictive Models") +  theme(plot.title=element_text(face="bold", size=20))    
 g2 = g2 + coord_cartesian(ylim = c(0.70, 1))
+
+carriersClust = data.frame(carriersInCluster[,1], carriersInCluster[,2])
+colnames(carriersClust) = c('Cluster1', 'Cluster2')
+carriersClust$carrier = rownames(carriersClust)
+rownames(carriersClust) = NULL
+library("reshape2")
+carriersClust = melt(carriersClust, id.vars = 'carrier')
+g3 = ggplot(data = carriersClust, aes(x = carrier, y=value)) + geom_bar(stat = 'identity', color = 'black', fill = 'orange') 
+g3 = g3 +facet_grid(variable~.)
+g3 = g3 + theme(axis.title.x = element_blank(), axis.text.x = element_text(angle = 45, size = 15, color = 'black'))
+g3 = g3 + ylab('Number of Products') + theme(axis.title.y = element_text(size = 20, vjust = 2), axis.text.y = element_text(size = 15, color = 'black'))
+g3 = g3 + ggtitle("Distribution of Carriers in the Different Clusters") +  theme(plot.title=element_text(face="bold", size=15))    
+g3 = g3 + theme(strip.text.y = element_text(size = 15))
+
+productlineCluster = data.frame(productlineCluster[,1], productlineCluster[,2])
+colnames(productlineCluster) = c('Cluster1', 'Cluster2')
+productlineCluster$prodline = rownames(productlineCluster)
+rownames(carriersClust) = NULL
+productlineCluster = melt(productlineCluster, id.vars = 'prodline')
+g4 = ggplot(data = productlineCluster, aes(x = prodline, y=value)) + geom_bar(stat = 'identity', color = 'black', fill = 'light blue')
+g4 = g4 +facet_grid(variable~.)
+g4 = g4 + theme(axis.title.x = element_blank(), axis.text.x = element_text(angle = 45, size = 15, color = 'black'))
+g4 = g4 + ylab('Number of Products') + theme(axis.title.y = element_text(size = 20, vjust = 2), axis.text.y = element_text(size = 15, color = 'black'))
+g4 = g4 + ggtitle("Distribution of Products in the Different Clusters") +  theme(plot.title=element_text(face="bold", size=15))    
+g4 = g4 + theme(strip.text.y = element_text(size = 15))
 
 pdf("./EDXKaggle/Accuracy.pdf")
 print(g)
@@ -542,3 +583,12 @@ dev.off()
 pdf("./EDXKaggle/auc.pdf")
 print(g2)
 dev.off()
+
+pdf("./EDXKaggle/CarriersPerCluster.pdf")
+print(g3)
+dev.off()
+
+pdf("./EDXKaggle/ProductsPerCluster.pdf")
+print(g4)
+dev.off()
+
