@@ -1,0 +1,129 @@
+---
+title: "Development of Predictive Models for the successful selling of iPads on ebay"
+author: "Soledad Galli"
+date: "15 August 2015"
+output: html_document
+---
+**In this section, I will show 2 of the predictive models I built to predict the selling of an iPad on ebay. In addition, I discuss the variables I introduced to increase the predictive power of the models.**
+
+In addition to the variables provided in the dataset, I created additional variables based on the characteristics of the listings, which are generally known to be predictors for good selling on ebay. These variables were:
+
+* noDescription: indicating if a listing has a description at all
+
+* TotalWords: the length of the description
+
+* goodcon: Indicates whether the description clarifies that the item is in good condition
+
+* lowStartPrice: Shows if the item's starting price is below U$S 240
+
+``` {r, echo = FALSE}
+ebaytrain = read.csv('./ebayiPadTrain.csv', stringsAsFactors = FALSE) # training set provided in Kaggle
+
+ebaytrain$TotalWords = nchar(ebaytrain$description) # To evaluate whether the extent of the description is a predictor
+ebaytrain$lowstartprice = ifelse(ebaytrain$startprice <= 242, 1, 0) # To evaluate whether low price is a good predictor
+ebaytrain$nodescription = ifelse(nchar(ebaytrain$description)==0,1,0) # To evaluate whether not having a description is a good predictor
+ebaytrain$goodcon = ifelse(grepl("good condition",ebaytrain$description,fixed=TRUE), 1, 0) # To evaluate whether descriptions including "good condition" are good predictors
+
+for (i in 4:9) { ebaytrain[,i] = as.factor(ebaytrain[,i]) }
+
+ebaytrain = subset(ebaytrain, productline !='iPad 5' & productline !='iPad mini Retina') # the products iPad mini and iPad 5 are not present in test set
+ebaytrain$productline = factor(ebaytrain$productline) # to remove the extra factor names
+
+proportions = list(Bid = table(ebaytrain$biddable, ebaytrain$sold), LowStartPrice = table(ebaytrain$lowstartprice, ebaytrain$sold), NoDescription = table(ebaytrain$nodescription, ebaytrain$sold), GoodCondition = table(ebaytrain$goodcon, ebaytrain$sold), Carrier = table(ebaytrain$carrier, ebaytrain$sold), Product = table(ebaytrain$productline, ebaytrain$sold))
+```
+As observed from the table below, where the column 1 indicates a sold iPad and 0 indicates that the iPad did not sell:
+
+* if the item is advertised as biddable, it has more chances to be sold: 638 items are sold out of 835, whereas only 217 out of 1017 from the buy it now items are sold
+
+* LowstartPrice is a good predictor, as more than half of low start price items are sold (703 out of 1170 vs 152 out of 680)
+
+For the remaining variables, it is not inmediately clear whether they would contribute significantly to predict if an iPad will sell: roughly the same proportion of items are sold and fail to sell.
+
+```{r, echo=TRUE}
+proportions
+```
+
+To build the predictive models, I separated my original dataset into a training dateset containing 70% of the iPad listings, and a test dataset with 30% of the listings. I built the models on the training set and evaluated them on the test set.
+
+Within the code file ebayPreditiveModels.R you will find all the different models I built. Here I will mention only a few as an example.
+
+The first model, was a logistics regression model using all the variables except the text variable description
+
+```{r, echo = FALSE}
+library(caTools)
+set.seed(144)
+spl = sample.split(ebaytrain$sold, SplitRatio = 0.7)
+train = subset(ebaytrain, spl == T)
+test = subset(ebaytrain, spl == F)
+train$description = NULL # remove description column
+test$description = NULL
+train$UniqueID = NULL # remove ID column
+test$UniqueID = NULL
+```
+
+```{r}
+logReg = glm(sold ~., data = train, family = binomial)
+testPred = predict(logReg, newdata = test, type = 'response')
+predictionsTable = table(test$sold, testPred > 0.5)
+accuracy = (predictionsTable[1,1]+predictionsTable[2,2])/sum(predictionsTable) 
+predictionsTable
+accuracy
+summary(logReg)
+```
+This model has a modest accuracy. We observe that the variables biddable, startprice, condition, productline and storage are significant, indicating that they are good predictors in the logistic regression model, of whether an iPad will be sold. On the contrary, the color and carrier of the iPad are not good predictors of a successfull sale. The variables that I introduced (good condition, presence of description, length of the description) do not seem to contribute to enhance the predictive power of the model.
+
+I then built a series of random forest trees to predict the sale of an iPad on ebay. Below I show the model with the highest accuracy.
+
+``` {r, echo = FALSE}
+library(randomForest)
+train$sold = as.factor(train$sold)
+test$sold = as.factor(test$sold)
+train$goodcon = NULL
+train$nodescription = NULL
+test$goodcon = NULL
+test$nodescription = NULL
+train$lowstartprice = NULL
+train$carrier = NULL
+train$color = NULL
+test$lowstartprice = NULL
+test$carrier = NULL
+test$color = NULL
+train$WordCount = NULL
+test$WordCount = NULL
+```
+
+``` {r}
+set.seed(2000)
+ebayRF =  randomForest(sold ~., data = train)
+testPred = predict(ebayRF, newdata = test, type = 'prob')[,2]
+library(ROCR)
+ROCRpred = prediction(testPred, test$sold)
+auc = as.numeric(performance(ROCRpred, "auc")@y.values)
+predictionsTable = table(test$sold, testPred > 0.5)
+accuracy = (predictionsTable[1,1]+predictionsTable[2,2])/sum(predictionsTable) 
+accuracy
+auc
+ebayRF$importance
+ROCRperf = performance(ROCRpred, "tpr", "fpr")
+plot(ROCRperf, colorize=TRUE, print.cutoffs.at=seq(0,1,by=0.1), text.adj=c(-0.2,1.7))
+```
+
+
+
+This model has an accuracy of 81%. The variables that contribute to determine the successful sale of an iPad on ebay are:
+
+* biddable
+
+* condition
+
+* productline  
+
+* TotalWords 
+
+* storage
+
+* cellular
+
+Conclusion: we identified which variables contribute significantly to predict whether an iPad will be sold on iPad. These variables were implemented in a random forest trees model for the predictions.
+
+**This information is useful, as it allows ebay to provide better advice to their sellers on how to generate improved listings that will increase the chances of selling the iPad.**

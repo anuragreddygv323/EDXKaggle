@@ -1,11 +1,11 @@
-# Predicting which iPads on ebay will be sold
+# Predicting which iPads will be sold on ebay
 ###Kaggle competition open to students of the MITx free online course 15.071x on edX- The Analytics Edge.
 
 
 
 A training and testing set were provided by [Kaggle](https://www.kaggle.com/solegalli/results): eBayiPadTrain.csv with 1861 listings, and eBayiPadTest.csv with 798 listings. 
 
-The models should predict whether an iPad would be sold (1) or not (0). This constituted the dependent variable, which was provided for the training but not for the testing set.
+Models should predict whether an iPad would be sold (1) or not (0). This constituted the dependent variable, which was provided for the training but not for the testing set.
 
 Within the independent variables we find:
 
