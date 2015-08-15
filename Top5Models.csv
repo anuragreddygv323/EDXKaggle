@@ -1,0 +1,6 @@
+"Model","Accuracy","auc"
+"RandomForest4",0.8183,0.876
+"RandomForest2",0.8147,0.8759
+"Clusters + RF",0.8094,0.8731
+"RandomForest1",0.8129,0.8704
+"RandomForest3",0.8058,0.8655
