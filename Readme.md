@@ -45,4 +45,4 @@ Within the independent variables we find:
      
      + Receiver Operator Charactristic curve for the Random Forest model number 4, which shows the biggest area under the ROC curve and predicts whether an iPad will sell with high accuracy 
 
-**For more detail on the development of the models and the outcome of the code please visit this [link](www.kaggle.com/solegalli/EDXKaggle/blob/master/Development.Rmd)**
+**For more detail on the development of the models and the outcome of the code please visit this [link](http://www.rpubs.com/solegalli/EDXKaggle)**
